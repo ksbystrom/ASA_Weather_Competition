@@ -1,7 +1,0 @@
-Neutral Zone regrouping: after leaving offensive zone, puck stays in neutral zone until successful offensive zone entry or opposition takes puck into defensive zone
-
-Full Zone regrouping: after leaving offensive zone, our team chooses to enter the defensive zone before the first opposition takeover
-
-E(shots| neutral zone) = shots on the opposition's net after a successful neutral zone regrouping
-E(offensive time | neutral zone) = time in the offensive zone after a successful neutral zone regrouping
-E(breakout time | neutral zone) = time in neutral or defensive zone until an offensive zone entry success
