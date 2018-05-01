@@ -1,0 +1,179 @@
+---
+title: "asa"
+author: "Lei Chen"
+date: "May 1, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+
+train = read.csv("trainingData.csv",stringsAsFactors = F)
+train = train[-c(1,2)]
+#For event column, set NA values to "No Event"
+train$Events <- replace(train$Events, is.na(train$Events), "No Event")
+table(train$Events)
+
+#Add a column that counts the number of NAs in the data
+train$CountNA <- apply(train, MARGIN = 1, FUN = function(x) length(x[is.na(x)]) )
+table(train$CountNA)
+
+# We probably want to remove rows with more than 8 missing values. Let's check what these rows look like
+bigMissing <- train[train$CountNA > 8,] # Looks like none of these rows have any rare events so they should be safe to delete
+#I will go ahead and delete these cases
+train <- train[train$CountNA < 9,]
+
+#Now I will check the values with only 1 NA because there are a lot of them
+#smallMissing <- train[train$CountNA == 1,]
+
+#Check correlation between variables
+numericTrain <- train[complete.cases(train),sapply(train, is.numeric)]
+m <- cor(numericTrain)
+corrplot::corrplot(m)
+names(train)
+#Gustspeed seems to be correlated with mean sea level pressure and mean windspeed
+gustModel <- lm(train$Max_Gust_SpeedMPH~train$Mean_Sea_Level_PressureIn+train$Mean_Wind_SpeedMPH)
+#Also make model with interaction term
+gustModel2 <- lm(train$Max_Gust_SpeedMPH~train$Mean_Sea_Level_PressureIn+
+                   train$Mean_Wind_SpeedMPH + 
+                   train$Mean_Sea_Level_PressureIn*train$Mean_Wind_SpeedMPH )
+gustModel3 <- lm(train$Max_Gust_SpeedMPH~train$Mean_Sea_Level_PressureIn )
+gustModel4 <- lm(train$Max_Gust_SpeedMPH~ train$Mean_Wind_SpeedMPH)
+summary(gustModel)
+summary(gustModel2) # Interaction term is not significant, should go with original model
+summary(gustModel3)
+summary(gustModel4)
+
+plot(train$Max_Gust_SpeedMPH) #ok, hust speeds should be between 0 and 100
+#Impute max gust speed based on sea level and wind speed linear regression model
+train$Max_Gust_SpeedMPH <- ifelse(is.na(train$Max_Gust_SpeedMPH), 
+                                  coefficients(gustModel4)[1] + (coefficients(gustModel4)[2]*train$Mean_Wind_SpeedMPH), 
+                                  train$Max_Gust_SpeedMPH) 
+plot(train$Max_Gust_SpeedMPH) #Looks good
+summary(train$Max_Gust_SpeedMPH) # there are a couple of really big values, but should be ok
+###############
+#Let's see is there any difference between 
+missingdata = train[train$CountNA != 0,]
+Missing1<- train[train$CountNA == 1,]#only Cloudcover missing since 2 is no events, and one is FOG
+Missing2 <- train[train$CountNA == 2,]#MIn&Max VIsibility Miles/ events rain/ 
+missing3=train[train$CountNA == 3,]#Min_Sea_Level_PressureIn Max_VisibilityMiles Mean_VisibilityMiles Min_VisibilityMiles// no events
+Missing4 <- train[train$CountNA == 4,]
+Missing7<- train[train$CountNA == 7,]
+
+
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+#cleaning the data, imputation occurs for this task
+#impute the estimated value in those "NA" except those rows with "No Event"
+
+#try to find out the rows which have more than 1 NA and are not "No Event"
+trainmissing <- train[train$CountNA > 1 & train$Events != "No Event", ] #1 for snowthunderstorm, 1 for rain
+
+#check if there is "Snow-Thunderstorm" event for other rows
+snowThundersStorms <- train[train$Events == "Snow-Thunderstorm" & train$CountNA > 1,] 
+
+#form an environment that only has event "Rain" with number of less than or equal to 1 "NA"
+trainRain <- train[train$Events == "Rain" & train$CountNA ==1,]
+
+
+```
+I haven't combine the following rcode from zhiyuh cause I cannot run those code
+```{r}
+#before this code I've read Markovchain.r and first-meeting-jsm.r
+
+write.csv(train, "trainData.csv")#I just want its' string as factors, then there won't have error for KNNImputation()
+#attached train data
+train.imp = read.csv("trainData.csv",header = T,stringsAsFactors = T)
+head(train.imp)
+train.imp = train.imp[,-1]#X is useless, why we have it is just because we write train.imp as a csv
+#Check correlation between variables
+numericTrain <- train.imp[complete.cases(train.imp),sapply(train.imp, is.numeric)]
+m <- cor(numericTrain)
+corrplot::corrplot(m)
+
+require(mice)
+require(VIM)
+md.pattern(train.imp)
+aggr_plot <- aggr(train.imp, col = c('blue','red'),numbers = TRUE,sortVars = TRUE, labels=names(train),Cex.axis = .7, gap = 3,Ylab = c("Missing data histogram","Missing value pattern"))
+library(DMwR)
+#compare datasets:train.imp and traindata after imputation
+aggr_plot
+#remove countNA cause it won't help impuatate
+
+train.imp=train.imp[,-25]
+a = dplyr::select(train.imp, Max_Sea_Level_PressureIn,Mean_Sea_Level_PressureIn ,Min_Sea_Level_PressureIn  ,Max_VisibilityMiles,Mean_VisibilityMiles
+              ,Min_VisibilityMiles,Max_Wind_SpeedMPH ,Mean_Wind_SpeedMPH,Max_Gust_SpeedMPH ,CloudCover)
+
+knnOutput <- knnImputation(train.imp)
+
+b = dplyr::select(knnOutput, Max_Sea_Level_PressureIn,Mean_Sea_Level_PressureIn ,Min_Sea_Level_PressureIn  ,Max_VisibilityMiles,Mean_VisibilityMiles
+                     ,Min_VisibilityMiles,Max_Wind_SpeedMPH ,Mean_Wind_SpeedMPH,Max_Gust_SpeedMPH ,CloudCover)
+corrplot::corrplot(cor(knnOutput[,sapply(knnOutput, is.numeric)]))
+corrplot::corrplot(m)
+summary(a)
+summary(b)
+
+
+
+
+```
+
+```{r}
+#before this code I've read Markovchain.r and first-meeting-jsm.r
+
+write.csv(train, "trainData.csv")#I just want its' string as factors, then there won't have error for KNNImputation()
+#attached train data
+train.imp = read.csv("trainData.csv",header = T,stringsAsFactors = T)
+head(train.imp)
+train.imp = train.imp[,-1]#X is useless, why we have it is just because we write train.imp as a csv
+#Check correlation between variables
+numericTrain <- train.imp[complete.cases(train.imp),sapply(train.imp, is.numeric)]
+m <- cor(numericTrain)
+corrplot::corrplot(m)
+
+require(mice)
+require(VIM)
+md.pattern(train.imp)
+aggr_plot <- aggr(train.imp, col = c('blue','red'),numbers = TRUE,sortVars = TRUE, labels=names(train),Cex.axis = .7, gap = 3,Ylab = c("Missing data histogram","Missing value pattern"))
+library(DMwR)
+#compare datasets:train.imp and traindata after imputation
+aggr_plot
+#remove countNA cause it won't help impuatate
+
+train.imp=train.imp[,-25]
+a = dplyr::select(train.imp, Max_Sea_Level_PressureIn,Mean_Sea_Level_PressureIn ,Min_Sea_Level_PressureIn  ,Max_VisibilityMiles,Mean_VisibilityMiles
+              ,Min_VisibilityMiles,Max_Wind_SpeedMPH ,Mean_Wind_SpeedMPH,Max_Gust_SpeedMPH ,CloudCover)
+
+knnOutput <- knnImputation(train.imp)
+
+b = dplyr::select(knnOutput, Max_Sea_Level_PressureIn,Mean_Sea_Level_PressureIn ,Min_Sea_Level_PressureIn  ,Max_VisibilityMiles,Mean_VisibilityMiles
+                     ,Min_VisibilityMiles,Max_Wind_SpeedMPH ,Mean_Wind_SpeedMPH,Max_Gust_SpeedMPH ,CloudCover)
+corrplot::corrplot(cor(knnOutput[,sapply(knnOutput, is.numeric)]))
+corrplot::corrplot(m)
+summary(a)
+summary(b)
+
+
+
+
+```
+
