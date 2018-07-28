@@ -1,3 +1,8 @@
+#Author: Kristen Bystrom
+#Date: May 6, 2018
+#Purpose: transform data to simplified events based on a heiarchy system
+#Relies on: 
+
 library(stringr)
 
 toClean = read.csv("final_train.csv", stringsAsFactors = FALSE)
@@ -41,7 +46,7 @@ toClean$Tornado <- str_detect(toClean$Events, "Tornado")
 toClean$Hail <- str_detect(toClean$Events, "Hail")
 
 # Set heiarchy to detect most extreme event
-# Tornado > Thunderstorm > Snow > Hail > Rain > Fog
+# Tornado > Thunderstorm > Snow > Hail > Rain > Fog> No Event
 
 toClean$NewEvent = ifelse(toClean$Tornado == TRUE, "Tornado", 
                           ifelse(toClean$Thunderstorm == TRUE, "Thunderstorm",
