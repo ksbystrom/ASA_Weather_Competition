@@ -1,0 +1,536 @@
+---
+title: "Untitled"
+author: "Zhi Yuh Ou Yang (301322064)"
+date: "5/25/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+steps for this research:
+1. find the code of the respective analysis method (building the model)
+2. find the model by doing the model selection
+3. test with the testing data and find the accuracy of the model
+
+```{r}
+library(dplyr)
+library(beepr)
+library(magrittr)
+```
+
+```{r}
+#read the file with intended variables
+DA <- read.csv(file = "/Users/ouyangzhiyuh/ASA_Weather_Competition/final_train_simplified.csv", stringsAsFactors = FALSE)
+DA <- select(DA, -X, -X.1, -CountNA, -Fog, -Rain, -Thunderstorm, -Snow, -Tornado, -Hail, -AirPtCd, -Events)
+
+#use filter() to delete the hail
+#DAwoutHail <- filter(DA, DA$NewEvent != "Hail")
+#DAwoutHail <- DA[which(DA$NewEvent != "Hail"),]
+#DAwoutHail <- DA
+DA$NewEvent <- as.factor(DA$NewEvent)
+DA$NewEvent <- droplevels.factor(DA$NewEvent, exclude = "Hail")
+DA <- na.omit(DA)
+
+DA$PrecipitationIn[DA$PrecipitationIn == "T"] <- "0" 
+DA$PrecipitationIn <- as.numeric(DA$PrecipitationIn)
+
+write.csv(DA, "finalDA.csv", row.names = FALSE)
+```
+
+```{r}
+#read the test file
+DAtest <- read.csv(file = "/Users/ouyangzhiyuh/ASA_Weather_Competition/final_test_simplified.csv", stringsAsFactors = FALSE)
+DAtest <- select(DAtest, -X, -X.1, -CountNA, -Fog, -Rain, -Thunderstorm, -Snow, -Tornado, -Hail, -AirPtCd, -Events)
+
+#exclude 'Hail'
+DAtest$NewEvent <- as.factor(DAtest$NewEvent)
+DAtest$NewEvent <- droplevels.factor(DAtest$NewEvent, exclude = "Hail")
+DAtest <- na.omit(DAtest)
+
+DAtest$PrecipitationIn[DAtest$PrecipitationIn == "T"] <- "0" 
+DAtest$PrecipitationIn <- as.numeric(DAtest$PrecipitationIn)
+
+#test set without 'NewEvent'
+DAtestNN <- select(DAtest, -NewEvent)
+
+write.csv(DAtest, "finalDAtest.csv", row.names = FALSE)
+write.csv(DAtestNN, "finalDAtestNN.csv", row.names = FALSE)
+```
+
+```{r}
+#mutinomial regression - logistics
+###we have to look for the probit to see if there is any different
+#install.packages("foreign")
+#read the file with intended variables
+library("NeuralNetTools")
+library("nnet") #for the multinominal regression #this is a package for fit neural networks
+
+#test - multinomial log-linear regression is multinomial logistics regression
+# https://stats.idre.ucla.edu/r/dae/multinomial-logistic-regression/
+trainMModel <- multinom(formula = NewEvent ~ Max_TemperatureF + Mean_TemperatureF + Min_TemperatureF + Max_Dew_PointF + MeanDew_PointF + Min_DewpointF + Max_Humidity + Mean_Humidity + Min_Humidity + Max_Sea_Level_PressureIn + Mean_Sea_Level_PressureIn + Min_Sea_Level_PressureIn + Max_VisibilityMiles + Mean_VisibilityMiles + Min_VisibilityMiles + Max_Wind_SpeedMPH + Mean_Wind_SpeedMPH + Max_Gust_SpeedMPH + PrecipitationIn + CloudCover + WindDirDegrees, data = DA) 
+
+#save(test, file = 'multinomialtest.rda')
+#load(file = 'multinomialtest.rda')
+
+#multinomial test 2 - try to figure it out
+#https://www.princeton.edu/~otorres/LogitR101.pdf
+```
+
+```{r}
+#predict with the test set
+actualM <- DAtest$NewEvent
+predictionM <- predict(trainMModel, DAtestNN)
+correctM <- (DAtest$NewEvent == predictionM) 
+
+MTest <- data.frame(actualM, predictionM, correctM)
+
+#number of in/correct prediction
+table(MTest$correctM)
+
+#test on the overall accuracy
+MOAccuracy <- table(MTest$correctM)['TRUE']/length(MTest$correctM)
+
+#look at the number of prediction for each events
+table(MTest$predictionM)
+table(MTest$actualM)
+
+MAccuracy <- myAccuracy(actualM, predictionM)
+MPlot <- plotResults(MAccuracy)
+```
+
+```{r}
+library(caret)
+CMM <- confusionMatrix(predictionM, actualM)
+write.csv(CMM[2], "confusionMatrixMultinomial.csv")
+```
+
+```{r}
+beta.hat<-coefficients(trainMModel)
+```
+
+```{r}
+# Mean temperature
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,3]*x) + exp(beta.hat[2,1] + beta.hat[2,3]*x)), ylab = expression(hat(pi)), xlab = "Mean Temperature",
+      xlim = c(min(DA$Mean_TemperatureF), max(DA$Mean_TemperatureF)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,3]*x) + exp(beta.hat[2,1] + beta.hat[2,3]*x) + exp(beta.hat[3,1] + beta.hat[3,3]*x) + exp(beta.hat[4,1] + beta.hat[4,3]*x) + exp(beta.hat[5,1] + beta.hat[5,3]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_TemperatureF[DA$NewEvent == "Fog"]), max(DA$Mean_TemperatureF[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,3]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,3]*x) + exp(beta.hat[2,1] + beta.hat[2,3]*x) + exp(beta.hat[3,1] + beta.hat[3,3]*x) + exp(beta.hat[4,1] + beta.hat[4,3]*x) + exp(beta.hat[5,1] + beta.hat[5,3]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_TemperatureF[DA$NewEvent == "No Event"]), max(DA$Mean_TemperatureF[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,3]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,3]*x) + exp(beta.hat[2,1] + beta.hat[2,3]*x) + exp(beta.hat[3,1] + beta.hat[3,3]*x) + exp(beta.hat[4,1] + beta.hat[4,3]*x) + exp(beta.hat[5,1] + beta.hat[5,3]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_TemperatureF[DA$NewEvent == "Rain"]), max(DA$Mean_TemperatureF[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,3]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,3]*x) + exp(beta.hat[2,1] + beta.hat[2,3]*x) + exp(beta.hat[3,1] + beta.hat[3,3]*x) + exp(beta.hat[4,1] + beta.hat[4,3]*x) + exp(beta.hat[5,1] + beta.hat[5,3]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_TemperatureF[DA$NewEvent == "Snow"]), max(DA$Mean_TemperatureF[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,3]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,3]*x) + exp(beta.hat[2,1] + beta.hat[2,3]*x) + exp(beta.hat[3,1] + beta.hat[3,3]*x) + exp(beta.hat[4,1] + beta.hat[4,3]*x) + exp(beta.hat[5,1] + beta.hat[5,3]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_TemperatureF[DA$NewEvent == "Thunderstorm"]), max(DA$Mean_TemperatureF[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,3]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,3]*x) + exp(beta.hat[2,1] + beta.hat[2,3]*x) + exp(beta.hat[3,1] + beta.hat[3,3]*x) + exp(beta.hat[4,1] + beta.hat[4,3]*x) + exp(beta.hat[5,1] + beta.hat[5,3]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_TemperatureF[DA$NewEvent == "Tornado"]), max(DA$Mean_TemperatureF[DA$NewEvent == "Tornado"])))
+
+legend(x = -100, y = 0.8, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p1 <- recordPlot()
+plot.new()
+```
+
+```{r}
+# Mean dew point
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,6]*x) + exp(beta.hat[2,1] + beta.hat[2,6]*x)), ylab = expression(hat(pi)), xlab = "Mean Dew Point",
+      xlim = c(min(DA$MeanDew_PointF), max(DA$MeanDew_PointF)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,6]*x) + exp(beta.hat[2,1] + beta.hat[2,6]*x) + exp(beta.hat[3,1] + beta.hat[3,6]*x) + exp(beta.hat[4,1] + beta.hat[4,6]*x) + exp(beta.hat[5,1] + beta.hat[5,6]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$MeanDew_PointF[DA$NewEvent == "Fog"]), max(DA$MeanDew_PointF[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,6]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,6]*x) + exp(beta.hat[2,1] + beta.hat[2,6]*x) + exp(beta.hat[3,1] + beta.hat[3,6]*x) + exp(beta.hat[4,1] + beta.hat[4,6]*x) + exp(beta.hat[5,1] + beta.hat[5,6]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$MeanDew_PointF[DA$NewEvent == "No Event"]), max(DA$MeanDew_PointF[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,6]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,6]*x) + exp(beta.hat[2,1] + beta.hat[2,6]*x) + exp(beta.hat[3,1] + beta.hat[3,6]*x) + exp(beta.hat[4,1] + beta.hat[4,6]*x) + exp(beta.hat[5,1] + beta.hat[5,6]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$MeanDew_PointF[DA$NewEvent == "Rain"]), max(DA$MeanDew_PointF[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,6]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,6]*x) + exp(beta.hat[2,1] + beta.hat[2,6]*x) + exp(beta.hat[3,1] + beta.hat[3,6]*x) + exp(beta.hat[4,1] + beta.hat[4,6]*x) + exp(beta.hat[5,1] + beta.hat[5,6]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$MeanDew_PointF[DA$NewEvent == "Snow"]), max(DA$MeanDew_PointF[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,6]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,6]*x) + exp(beta.hat[2,1] + beta.hat[2,6]*x) + exp(beta.hat[3,1] + beta.hat[3,6]*x) + exp(beta.hat[4,1] + beta.hat[4,6]*x) + exp(beta.hat[5,1] + beta.hat[5,6]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$MeanDew_PointF[DA$NewEvent == "Thunderstorm"]), max(DA$MeanDew_PointF[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,6]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,6]*x) + exp(beta.hat[2,1] + beta.hat[2,6]*x) + exp(beta.hat[3,1] + beta.hat[3,6]*x) + exp(beta.hat[4,1] + beta.hat[4,6]*x) + exp(beta.hat[5,1] + beta.hat[5,6]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$MeanDew_PointF[DA$NewEvent == "Tornado"]), max(DA$MeanDew_PointF[DA$NewEvent == "Tornado"])))
+
+legend(x = -30, y = 0.8, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p2 <- recordPlot()
+plot.new()
+```
+```{r}
+#testing for the animation
+p <- list(p1, p2)
+library(animation)
+library(magick)
+saveGIF({for (i in 1:2)
+  p[i]})
+```
+
+```{r}
+# Mean humidity
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,9]*x) + exp(beta.hat[2,1] + beta.hat[2,9]*x)), ylab = expression(hat(pi)), xlab = "Mean Humidity",
+      xlim = c(min(DA$Mean_Humidity), max(DA$Mean_Humidity)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,9]*x) + exp(beta.hat[2,1] + beta.hat[2,9]*x) + exp(beta.hat[3,1] + beta.hat[3,9]*x) + exp(beta.hat[4,1] + beta.hat[4,9]*x) + exp(beta.hat[5,1] + beta.hat[5,9]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Humidity[DA$NewEvent == "Fog"]), max(DA$Mean_Humidity[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,9]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,9]*x) + exp(beta.hat[2,1] + beta.hat[2,9]*x) + exp(beta.hat[3,1] + beta.hat[3,9]*x) + exp(beta.hat[4,1] + beta.hat[4,9]*x) + exp(beta.hat[5,1] + beta.hat[5,9]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Humidity[DA$NewEvent == "No Event"]), max(DA$Mean_Humidity[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,9]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,9]*x) + exp(beta.hat[2,1] + beta.hat[2,9]*x) + exp(beta.hat[3,1] + beta.hat[3,9]*x) + exp(beta.hat[4,1] + beta.hat[4,9]*x) + exp(beta.hat[5,1] + beta.hat[5,9]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Humidity[DA$NewEvent == "Rain"]), max(DA$Mean_Humidity[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,9]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,9]*x) + exp(beta.hat[2,1] + beta.hat[2,9]*x) + exp(beta.hat[3,1] + beta.hat[3,9]*x) + exp(beta.hat[4,1] + beta.hat[4,9]*x) + exp(beta.hat[5,1] + beta.hat[5,9]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Humidity[DA$NewEvent == "Snow"]), max(DA$Mean_Humidity[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,9]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,9]*x) + exp(beta.hat[2,1] + beta.hat[2,9]*x) + exp(beta.hat[3,1] + beta.hat[3,9]*x) + exp(beta.hat[4,1] + beta.hat[4,9]*x) + exp(beta.hat[5,1] + beta.hat[5,9]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Humidity[DA$NewEvent == "Thunderstorm"]), max(DA$Mean_Humidity[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,9]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,9]*x) + exp(beta.hat[2,1] + beta.hat[2,9]*x) + exp(beta.hat[3,1] + beta.hat[3,9]*x) + exp(beta.hat[4,1] + beta.hat[4,9]*x) + exp(beta.hat[5,1] + beta.hat[5,9]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Humidity[DA$NewEvent == "Tornado"]), max(DA$Mean_Humidity[DA$NewEvent == "Tornado"])))
+
+legend(x = 60, y = 0.00012, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p3 <- recordPlot()
+plot.new()
+```
+
+```{r}
+# Mean Sea Level PressureIn
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,12]*x) + exp(beta.hat[2,1] + beta.hat[2,12]*x)), ylab = expression(hat(pi)), xlab = "Mean Sea Level PressureIn",
+      xlim = c(min(DA$Mean_Sea_Level_PressureIn), max(DA$Mean_Sea_Level_PressureIn)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,12]*x) + exp(beta.hat[2,1] + beta.hat[2,12]*x) + exp(beta.hat[3,1] + beta.hat[3,12]*x) + exp(beta.hat[4,1] + beta.hat[4,12]*x) + exp(beta.hat[5,1] + beta.hat[5,12]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Fog"]), max(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,12]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,12]*x) + exp(beta.hat[2,1] + beta.hat[2,12]*x) + exp(beta.hat[3,1] + beta.hat[3,12]*x) + exp(beta.hat[4,1] + beta.hat[4,12]*x) + exp(beta.hat[5,1] + beta.hat[5,12]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "No Event"]), max(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,12]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,12]*x) + exp(beta.hat[2,1] + beta.hat[2,12]*x) + exp(beta.hat[3,1] + beta.hat[3,12]*x) + exp(beta.hat[4,1] + beta.hat[4,12]*x) + exp(beta.hat[5,1] + beta.hat[5,12]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Rain"]), max(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,12]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,12]*x) + exp(beta.hat[2,1] + beta.hat[2,12]*x) + exp(beta.hat[3,1] + beta.hat[3,12]*x) + exp(beta.hat[4,1] + beta.hat[4,12]*x) + exp(beta.hat[5,1] + beta.hat[5,12]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Snow"]), max(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,12]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,12]*x) + exp(beta.hat[2,1] + beta.hat[2,12]*x) + exp(beta.hat[3,1] + beta.hat[3,12]*x) + exp(beta.hat[4,1] + beta.hat[4,12]*x) + exp(beta.hat[5,1] + beta.hat[5,12]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Thunderstorm"]), max(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,12]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,12]*x) + exp(beta.hat[2,1] + beta.hat[2,12]*x) + exp(beta.hat[3,1] + beta.hat[3,12]*x) + exp(beta.hat[4,1] + beta.hat[4,12]*x) + exp(beta.hat[5,1] + beta.hat[5,12]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Tornado"]), max(DA$Mean_Sea_Level_PressureIn[DA$NewEvent == "Tornado"])))
+
+legend(x = 29, y = 10e-194, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p4 <- recordPlot()
+plot.new()
+```
+
+```{r}
+# Mean Visibility Miles
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,15]*x) + exp(beta.hat[2,1] + beta.hat[2,15]*x)), ylab = expression(hat(pi)), xlab = "Mean Visibility Miles",
+      xlim = c(min(DA$Mean_VisibilityMiles), max(DA$Mean_VisibilityMiles)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,15]*x) + exp(beta.hat[2,1] + beta.hat[2,15]*x) + exp(beta.hat[3,1] + beta.hat[3,15]*x) + exp(beta.hat[4,1] + beta.hat[4,15]*x) + exp(beta.hat[5,1] + beta.hat[5,15]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_VisibilityMiles[DA$NewEvent == "Fog"]), max(DA$Mean_VisibilityMiles[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,15]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,15]*x) + exp(beta.hat[2,1] + beta.hat[2,15]*x) + exp(beta.hat[3,1] + beta.hat[3,15]*x) + exp(beta.hat[4,1] + beta.hat[4,15]*x) + exp(beta.hat[5,1] + beta.hat[5,15]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_VisibilityMiles[DA$NewEvent == "No Event"]), max(DA$Mean_VisibilityMiles[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,15]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,15]*x) + exp(beta.hat[2,1] + beta.hat[2,15]*x) + exp(beta.hat[3,1] + beta.hat[3,15]*x) + exp(beta.hat[4,1] + beta.hat[4,15]*x) + exp(beta.hat[5,1] + beta.hat[5,15]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_VisibilityMiles[DA$NewEvent == "Rain"]), max(DA$Mean_VisibilityMiles[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,15]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,15]*x) + exp(beta.hat[2,1] + beta.hat[2,15]*x) + exp(beta.hat[3,1] + beta.hat[3,15]*x) + exp(beta.hat[4,1] + beta.hat[4,15]*x) + exp(beta.hat[5,1] + beta.hat[5,15]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_VisibilityMiles[DA$NewEvent == "Snow"]), max(DA$Mean_VisibilityMiles[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,15]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,15]*x) + exp(beta.hat[2,1] + beta.hat[2,15]*x) + exp(beta.hat[3,1] + beta.hat[3,15]*x) + exp(beta.hat[4,1] + beta.hat[4,15]*x) + exp(beta.hat[5,1] + beta.hat[5,15]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_VisibilityMiles[DA$NewEvent == "Thunderstorm"]), max(DA$Mean_VisibilityMiles[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,15]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,15]*x) + exp(beta.hat[2,1] + beta.hat[2,15]*x) + exp(beta.hat[3,1] + beta.hat[3,15]*x) + exp(beta.hat[4,1] + beta.hat[4,15]*x) + exp(beta.hat[5,1] + beta.hat[5,15]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_VisibilityMiles[DA$NewEvent == "Tornado"]), max(DA$Mean_VisibilityMiles[DA$NewEvent == "Tornado"])))
+
+legend(x = 10, y = 0.0001, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p5 <- recordPlot()
+plot.new()
+```
+
+```{r}
+# Mean Wind Speed MPH
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,18]*x) + exp(beta.hat[2,1] + beta.hat[2,18]*x)), ylab = expression(hat(pi)), xlab = "Mean Wind Speed MPH",
+      xlim = c(min(DA$Mean_Wind_SpeedMPH), max(DA$Mean_Wind_SpeedMPH)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,18]*x) + exp(beta.hat[2,1] + beta.hat[2,18]*x) + exp(beta.hat[3,1] + beta.hat[3,18]*x) + exp(beta.hat[4,1] + beta.hat[4,18]*x) + exp(beta.hat[5,1] + beta.hat[5,18]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Fog"]), max(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,18]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,18]*x) + exp(beta.hat[2,1] + beta.hat[2,18]*x) + exp(beta.hat[3,1] + beta.hat[3,18]*x) + exp(beta.hat[4,1] + beta.hat[4,18]*x) + exp(beta.hat[5,1] + beta.hat[5,18]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "No Event"]), max(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,18]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,18]*x) + exp(beta.hat[2,1] + beta.hat[2,18]*x) + exp(beta.hat[3,1] + beta.hat[3,18]*x) + exp(beta.hat[4,1] + beta.hat[4,18]*x) + exp(beta.hat[5,1] + beta.hat[5,18]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Rain"]), max(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,18]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,18]*x) + exp(beta.hat[2,1] + beta.hat[2,18]*x) + exp(beta.hat[3,1] + beta.hat[3,18]*x) + exp(beta.hat[4,1] + beta.hat[4,18]*x) + exp(beta.hat[5,1] + beta.hat[5,18]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Snow"]), max(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,18]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,18]*x) + exp(beta.hat[2,1] + beta.hat[2,18]*x) + exp(beta.hat[3,1] + beta.hat[3,18]*x) + exp(beta.hat[4,1] + beta.hat[4,18]*x) + exp(beta.hat[5,1] + beta.hat[5,18]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Thunderstorm"]), max(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,18]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,18]*x) + exp(beta.hat[2,1] + beta.hat[2,18]*x) + exp(beta.hat[3,1] + beta.hat[3,18]*x) + exp(beta.hat[4,1] + beta.hat[4,18]*x) + exp(beta.hat[5,1] + beta.hat[5,18]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Tornado"]), max(DA$Mean_Wind_SpeedMPH[DA$NewEvent == "Tornado"])))
+
+legend(x = 50, y = 0.0001, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p6 <- recordPlot()
+plot.new()
+```
+
+```{r}
+p7 <- {# PrecipitationIn
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,20]*x) + exp(beta.hat[2,1] + beta.hat[2,20]*x)), ylab = expression(hat(pi)), xlab = "PrecipitationIn",
+      xlim = c(min(DA$PrecipitationIn), max(DA$PrecipitationIn)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,20]*x) + exp(beta.hat[2,1] + beta.hat[2,20]*x) + exp(beta.hat[3,1] + beta.hat[3,20]*x) + exp(beta.hat[4,1] + beta.hat[4,20]*x) + exp(beta.hat[5,1] + beta.hat[5,20]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$PrecipitationIn[DA$NewEvent == "Fog"]), max(DA$PrecipitationIn[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,20]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,20]*x) + exp(beta.hat[2,1] + beta.hat[2,20]*x) + exp(beta.hat[3,1] + beta.hat[3,20]*x) + exp(beta.hat[4,1] + beta.hat[4,20]*x) + exp(beta.hat[5,1] + beta.hat[5,20]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$PrecipitationIn[DA$NewEvent == "No Event"]), max(DA$PrecipitationIn[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,20]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,20]*x) + exp(beta.hat[2,1] + beta.hat[2,20]*x) + exp(beta.hat[3,1] + beta.hat[3,20]*x) + exp(beta.hat[4,1] + beta.hat[4,20]*x) + exp(beta.hat[5,1] + beta.hat[5,20]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$PrecipitationIn[DA$NewEvent == "Rain"]), max(DA$PrecipitationIn[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,20]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,20]*x) + exp(beta.hat[2,1] + beta.hat[2,20]*x) + exp(beta.hat[3,1] + beta.hat[3,20]*x) + exp(beta.hat[4,1] + beta.hat[4,20]*x) + exp(beta.hat[5,1] + beta.hat[5,20]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$PrecipitationIn[DA$NewEvent == "Snow"]), max(DA$PrecipitationIn[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,20]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,20]*x) + exp(beta.hat[2,1] + beta.hat[2,20]*x) + exp(beta.hat[3,1] + beta.hat[3,20]*x) + exp(beta.hat[4,1] + beta.hat[4,20]*x) + exp(beta.hat[5,1] + beta.hat[5,20]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$PrecipitationIn[DA$NewEvent == "Thunderstorm"]), max(DA$PrecipitationIn[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,20]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,20]*x) + exp(beta.hat[2,1] + beta.hat[2,20]*x) + exp(beta.hat[3,1] + beta.hat[3,20]*x) + exp(beta.hat[4,1] + beta.hat[4,20]*x) + exp(beta.hat[5,1] + beta.hat[5,20]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$PrecipitationIn[DA$NewEvent == "Tornado"]), max(DA$PrecipitationIn[DA$NewEvent == "Tornado"])))
+
+legend(x = 10, y = 0.0001, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)}
+
+p7 <- recordPlot()
+plot.new()
+```
+
+```{r}
+# Cloud Cover
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,21]*x) + exp(beta.hat[2,1] + beta.hat[2,21]*x)), ylab = expression(hat(pi)), xlab = "Cloud Cover",
+      xlim = c(min(DA$CloudCover), max(DA$CloudCover)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,21]*x) + exp(beta.hat[2,1] + beta.hat[2,21]*x) + exp(beta.hat[3,1] + beta.hat[3,21]*x) + exp(beta.hat[4,1] + beta.hat[4,21]*x) + exp(beta.hat[5,1] + beta.hat[5,21]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$CloudCover[DA$NewEvent == "Fog"]), max(DA$CloudCover[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,21]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,21]*x) + exp(beta.hat[2,1] + beta.hat[2,21]*x) + exp(beta.hat[3,1] + beta.hat[3,21]*x) + exp(beta.hat[4,1] + beta.hat[4,21]*x) + exp(beta.hat[5,1] + beta.hat[5,21]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$CloudCover[DA$NewEvent == "No Event"]), max(DA$CloudCover[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,21]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,21]*x) + exp(beta.hat[2,1] + beta.hat[2,21]*x) + exp(beta.hat[3,1] + beta.hat[3,21]*x) + exp(beta.hat[4,1] + beta.hat[4,21]*x) + exp(beta.hat[5,1] + beta.hat[5,21]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$CloudCover[DA$NewEvent == "Rain"]), max(DA$CloudCover[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,21]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,21]*x) + exp(beta.hat[2,1] + beta.hat[2,21]*x) + exp(beta.hat[3,1] + beta.hat[3,21]*x) + exp(beta.hat[4,1] + beta.hat[4,21]*x) + exp(beta.hat[5,1] + beta.hat[5,21]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$CloudCover[DA$NewEvent == "Snow"]), max(DA$CloudCover[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,21]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,21]*x) + exp(beta.hat[2,1] + beta.hat[2,21]*x) + exp(beta.hat[3,1] + beta.hat[3,21]*x) + exp(beta.hat[4,1] + beta.hat[4,21]*x) + exp(beta.hat[5,1] + beta.hat[5,21]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$CloudCover[DA$NewEvent == "Thunderstorm"]), max(DA$CloudCover[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,21]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,21]*x) + exp(beta.hat[2,1] + beta.hat[2,21]*x) + exp(beta.hat[3,1] + beta.hat[3,21]*x) + exp(beta.hat[4,1] + beta.hat[4,21]*x) + exp(beta.hat[5,1] + beta.hat[5,21]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$CloudCover[DA$NewEvent == "Tornado"]), max(DA$CloudCover[DA$NewEvent == "Tornado"])))
+
+legend(x = -350, y = 0.8, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p8 <- recordPlot()
+plot.new()
+```
+
+```{r}
+# Wind Dir Degrees
+# Create plotting area first to make sure get the whole region with respect to x-axis
+# pdf(file = "c:\\figures\\Figure3.3color.pdf", width = 7, height = 6, colormodel = "cmyk")   # Create plot for book
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,22]*x) + exp(beta.hat[2,1] + beta.hat[2,22]*x)), ylab = expression(hat(pi)), xlab = "Wind Dir Degrees",
+      xlim = c(min(DA$WindDirDegrees), max(DA$WindDirDegrees)), col = "black", lty = "solid", lwd = 2, n = 1000, type = "n",
+      panel.first = grid(col = "gray", lty = "dotted"))
+
+# Plot each pi_j
+# Fog
+curve(expr = 1/(1 + exp(beta.hat[1,1] + beta.hat[1,22]*x) + exp(beta.hat[2,1] + beta.hat[2,22]*x) + exp(beta.hat[3,1] + beta.hat[3,22]*x) + exp(beta.hat[4,1] + beta.hat[4,22]*x) + exp(beta.hat[5,1] + beta.hat[5,22]*x)),
+      col = "black", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$WindDirDegrees[DA$NewEvent == "Fog"]), max(DA$WindDirDegrees[DA$NewEvent == "Fog"])))  
+
+# No Event
+curve(expr = exp(beta.hat[1,1] + beta.hat[1,22]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,22]*x) + exp(beta.hat[2,1] + beta.hat[2,22]*x) + exp(beta.hat[3,1] + beta.hat[3,22]*x) + exp(beta.hat[4,1] + beta.hat[4,22]*x) + exp(beta.hat[5,1] + beta.hat[5,22]*x)),
+      col = "green", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$WindDirDegrees[DA$NewEvent == "No Event"]), max(DA$WindDirDegrees[DA$NewEvent == "No Event"]))) 
+
+# Rain   
+curve(expr = exp(beta.hat[2,1] + beta.hat[2,22]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,22]*x) + exp(beta.hat[2,1] + beta.hat[2,22]*x) + exp(beta.hat[3,1] + beta.hat[3,22]*x) + exp(beta.hat[4,1] + beta.hat[4,22]*x) + exp(beta.hat[5,1] + beta.hat[5,22]*x)),
+      col = "red", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$WindDirDegrees[DA$NewEvent == "Rain"]), max(DA$WindDirDegrees[DA$NewEvent == "Rain"]))) 
+
+# Snow
+curve(expr = exp(beta.hat[3,1] + beta.hat[3,22]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,22]*x) + exp(beta.hat[2,1] + beta.hat[2,22]*x) + exp(beta.hat[3,1] + beta.hat[3,22]*x) + exp(beta.hat[4,1] + beta.hat[4,22]*x) + exp(beta.hat[5,1] + beta.hat[5,22]*x)),
+      col = "orange", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$WindDirDegrees[DA$NewEvent == "Snow"]), max(DA$WindDirDegrees[DA$NewEvent == "Snow"]))) 
+
+# Thunderstorm
+curve(expr = exp(beta.hat[4,1] + beta.hat[4,22]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,22]*x) + exp(beta.hat[2,1] + beta.hat[2,22]*x) + exp(beta.hat[3,1] + beta.hat[3,22]*x) + exp(beta.hat[4,1] + beta.hat[4,22]*x) + exp(beta.hat[5,1] + beta.hat[5,22]*x)),
+      col = "blue", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$WindDirDegrees[DA$NewEvent == "Thunderstorm"]), max(DA$WindDirDegrees[DA$NewEvent == "Thunderstorm"]))) 
+
+#Tornado
+curve(expr = exp(beta.hat[5,1] + beta.hat[5,22]*x)/(1 + exp(beta.hat[1,1] + beta.hat[1,22]*x) + exp(beta.hat[2,1] + beta.hat[2,22]*x) + exp(beta.hat[3,1] + beta.hat[3,22]*x) + exp(beta.hat[4,1] + beta.hat[4,22]*x) + exp(beta.hat[5,1] + beta.hat[5,22]*x)),
+      col = "yellow", lty = "longdash", lwd = 2, n = 1000, add = TRUE,
+      xlim = c(min(DA$WindDirDegrees[DA$NewEvent == "Tornado"]), max(DA$WindDirDegrees[DA$NewEvent == "Tornado"])))
+
+legend(x = 100, y = 0.000135, legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty=c("longdash","longdash","longdash","longdash","longdash","longdash"),
+      col=c("black","green","red","orange","blue","yellow"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+
+p9 <- recordPlot()
+plot.new()
+```
+```{r}
+pAll <- list(p1, p2, p3, p4, p5, p6, p7, p8, p9)
+```

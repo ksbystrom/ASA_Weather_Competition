@@ -1,0 +1,42 @@
+---
+title: "multinomial"
+author: "Zhi Yuh Ou Yang (301322064)"
+date: "7/11/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(beepr)
+library(magrittr)
+library(scales)
+```
+
+```{r}
+#SVM regression
+library(e1071)
+```
+
+```{r}
+plot(DA[,c(22,1,2,3,4)], col = c(DA$NewEvent, aplha = 0.1))
+plot(DA[,c(22,5,6,7,8)], col = c(DA$NewEvent, aplha = 0.1))
+plot(DA[,c(22,9,10,11,12)], col = c(DA$NewEvent, aplha = 0.1))
+plot(DA[,c(22,13,14,15,16)], col = c(DA$NewEvent, aplha = 0.1))
+plot(DA[,c(22,17,18,19)], col = c(DA$NewEvent, aplha = 0.1))
+plot(DA[,c(22,20,21)], col = c(DA$NewEvent, aplha = 0.1))
+```
+
+```{r}
+#tuning
+#ranges = list(cost = 0.001)
+Tuning <- tune.svm(NewEvent ~ Max_TemperatureF + Mean_TemperatureF + Min_TemperatureF + Max_Dew_PointF + MeanDew_PointF + Min_DewpointF + Max_Humidity + Mean_Humidity + Min_Humidity + Max_Sea_Level_PressureIn + Mean_Sea_Level_PressureIn + Min_Sea_Level_PressureIn + Max_VisibilityMiles + Mean_VisibilityMiles + Min_VisibilityMiles + Max_Wind_SpeedMPH + Mean_Wind_SpeedMPH + Max_Gust_SpeedMPH + PrecipitationIn + CloudCover + WindDirDegrees, data = DA, kernel = "radial", gamma = 10^(-2:2), cost = 10^(-2:2))
+```
+
+```{r}
+SVMmodel <- svm(NewEvent ~ Max_TemperatureF + Mean_TemperatureF + Min_TemperatureF + Max_Dew_PointF + MeanDew_PointF + Min_DewpointF + Max_Humidity + Mean_Humidity + Min_Humidity + Max_Sea_Level_PressureIn + Mean_Sea_Level_PressureIn + Min_Sea_Level_PressureIn + Max_VisibilityMiles + Mean_VisibilityMiles + Min_VisibilityMiles + Max_Wind_SpeedMPH + Mean_Wind_SpeedMPH + Max_Gust_SpeedMPH + PrecipitationIn + CloudCover + WindDirDegrees, data = DA)
+```
+
