@@ -1,0 +1,126 @@
+---
+title: "KNN"
+author: "Zhi Yuh Ou Yang (301322064)"
+date: "7/11/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(dplyr)
+library(beepr)
+library(magrittr)
+```
+
+```{r}
+#KNN regression
+#from 'class' package
+library(FNN)
+library(class)
+
+#we have to have tuning as this is not a ideal situation since the k could be any integer.
+#we have to separate the training set into two sets of data, such as tuning train and tuning test.
+#after that we refit the model into the whole train set. and compare with the testing set.
+```
+
+```{r}
+#read the file with intended variables
+DA <- read.csv(file = "/Users/ouyangzhiyuh/ASA_Weather_Competition/final_train_simplified.csv", stringsAsFactors = FALSE)
+DA <- select(DA, -X, -X.1, -CountNA, -Fog, -Rain, -Thunderstorm, -Snow, -Tornado, -Hail, -AirPtCd, -Events)
+
+#use filter() to delete the hail
+#DAwoutHail <- filter(DA, DA$NewEvent != "Hail")
+#DAwoutHail <- DA[which(DA$NewEvent != "Hail"),]
+#DAwoutHail <- DA
+DA$NewEvent <- as.factor(DA$NewEvent)
+DA$NewEvent <- droplevels.factor(DA$NewEvent, exclude = "Hail")
+DA <- na.omit(DA)
+
+DA$PrecipitationIn[DA$PrecipitationIn == "T"] <- "0" 
+DA$PrecipitationIn <- as.numeric(DA$PrecipitationIn)
+```
+
+```{r}
+#partition the train data into 2
+library(caret)
+DAindices <- createDataPartition(DA$NewEvent, times = 1, p = 0.7)
+DAtrain2 <- DA[DAindices[[1]], ]
+DAtest2 <- DA[-DAindices[[1]], ]
+DAtrain2x <- select(DAtrain2, -NewEvent)
+DAtest2X <- select(DAtest2, -NewEvent)
+
+#choose the K
+accuracy = function(actual, predicted) {
+  mean(actual == predicted)
+}
+
+set.seed(42)
+k_to_try <- 1:20
+acc_k <- rep(x = 0, times = length(k_to_try))
+acc_each <- matrix(nrow = length(k_to_try), ncol = 6)
+
+for(i in seq_along(k_to_try)){
+  pred <- knn(train = DAtrain2x, 
+             test = DAtest2X, 
+             cl = DAtrain2[, "NewEvent"], 
+             k = k_to_try[i]
+             )
+  acc_k[i] <- accuracy(DAtest2[ , "NewEvent"], pred)
+  acc_each[i,] <- myAccuracy(DAtest2[ , "NewEvent"], pred)$Accuracy
+}
+
+#we choose k = 3, where we have not set the seed
+```
+
+```{r}
+#to choose k
+layout(matrix(c(1,2),nrow=1),
+       width=c(4,1.5)) 
+par(mar=c(5,4,4,0))
+plot(y = acc_each[,1],x = 1:20, type = "l", col = "blue", ylim = range(0:1), xlim = range(1:5), xlab = "K", ylab = "Accuracy" )
+lines(y = acc_each[,2],x = 1:20, type = "l", col = "brown")
+lines(y = acc_each[,3],x = 1:20, type = "l", col = "cyan")
+lines(y = acc_each[,4],x = 1:20, type = "l", col = "darkgreen")
+lines(y = acc_each[,5],x = 1:20, type = "l", col = "darkorange")
+lines(y = acc_each[,6],x = 1:20, type = "l", col = "red")
+axis(side = 1, at=1:5)
+
+par(mar=c(4,1,4,0))
+plot(c(0,1),type="n", axes=F, xlab="", ylab="")
+legend("top", legend=c("Fog", "No Event", "Rain", "Snow", "Thunderstorm", "Tornado"), lty= "solid",
+      col=c("blue","brown","cyan","darkgreen","darkorange","red"), bty="n", lwd = c(2,2,2,2,2,2), seg.len = 4)
+```
+
+```{r}
+#predict with the test set
+DAX <- select(DA, -NewEvent)
+DAtestX <- select(DAtest, -NewEvent)
+
+pred_3 <- knn(train = DAX, test = DAtestX, cl = DA[, "NewEvent"], k = 3)
+
+actualKNN <- DAtest$NewEvent
+correctKNN <- (DAtest$NewEvent == pred_3) 
+
+KNNTest <- data.frame(actualKNN, pred_3, correctKNN)
+
+#number of in/correct prediction
+table(KNNTest$correctKNN)
+
+#test on the overall accuracy
+table(KNNTest$correctKNN)['TRUE']/length(KNNTest$correctKNN)
+
+#look at the number of prediction for each events
+table(KNNTest$pred_3)
+table(KNNTest$actualKNN)
+
+KNNAccuracy <- myAccuracy(actualKNN, pred_3)
+KNNPlot <- plotResults(KNNAccuracy)
+```
+```{r}
+CMKNN <- confusionMatrix(pred_3, actualKNN)
+CMKNN
+```
+
