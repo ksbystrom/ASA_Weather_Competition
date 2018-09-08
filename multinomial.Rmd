@@ -15,6 +15,7 @@ steps for this research:
 3. test with the testing data and find the accuracy of the model
 
 ```{r}
+#different libaries
 library(dplyr)
 library(beepr)
 library(magrittr)
