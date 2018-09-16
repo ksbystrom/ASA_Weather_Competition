@@ -65,7 +65,7 @@ write.csv(DAtestNN, "finalDAtestNN.csv", row.names = FALSE)
 ###we have to look for the probit to see if there is any different
 #install.packages("foreign")
 #read the file with intended variables
-library("NeuralNetTools")
+#library("NeuralNetTools")
 library("nnet") #for the multinominal regression #this is a package for fit neural networks
 
 #test - multinomial log-linear regression is multinomial logistics regression
@@ -99,6 +99,19 @@ table(MTest$actualM)
 
 MAccuracy <- myAccuracy(actualM, predictionM)
 MPlot <- plotResults(MAccuracy)
+```
+
+```{r}
+#plot ROC curve
+library(plotROC) 
+MTest$ATornado <- ifelse(MTest$actualM == "Tornado", 1, 0)
+MTest$PTornado <- ifelse(MTest$predictionM == "Tornado", 1, 0)
+
+MTest$ANoevent <- ifelse(MTest$actualM == "No Event", 1, 0)
+MTest$PNoevent <- ifelse(MTest$predictionM == "No Event", 1, 0)
+
+ggplot(MTest, aes(d = ANoevent, m = PNoevent, color = "test")) + geom_roc(n.cut = 0)
+ggplot(MTest, aes(d = ATornado, m = PTornado, color = "test")) + geom_roc(n.cut = 0)
 ```
 
 ```{r}

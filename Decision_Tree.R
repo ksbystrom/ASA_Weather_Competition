@@ -26,6 +26,7 @@ library(caret)
 library(beepr)
 library(rpart.plot)
 library(randomForest)
+library(e1071)
 
 anyNA(mydata)
 
@@ -43,18 +44,29 @@ f <- as.formula(NewEvent ~ Max_TemperatureF + Mean_TemperatureF + Min_Temperatur
 
 trctrl <- trainControl(method = "repeatedcv", number = 10, repeats = 3)
 set.seed(3333)
-#dtree_fit <- train(f,
-#                   data = mydata, 
-#                   method = "rpart",
-#                   parms = list(split = "information"),
-#                   trControl=trctrl,
-#                   tuneLength = 10)
+dtree_fit <- train(f,
+                   data = mydata, 
+                   method = "rpart",
+                   parms = list(split = "information"),
+                   trControl=trctrl,
+                   tuneLength = 10)
 
 dtree_fit
 prp(dtree_fit$finalModel, box.palette = "Reds", tweak = 1.2)
 
 dtPrediction = predict(dtree_fit, newdata = testdata[, y_names])
+dtPrediction <- factor(dtPrediction, ordered = FALSE)
+testdata$NewEvent <- as.factor(testdata$NewEvent)
 dtResults = myAccuracy(testdata$NewEvent, dtPrediction)
+
+#plot ROC curve
+testdata$ATornado <- ifelse(testdata$NewEvent == "Tornado", 1, 0)
+testdata$PTornado <- ifelse(dtPrediction == "Tornado", 1, 0)
+
+basicplot <- ggplot(testdata, aes(d = ATornado, m = PTornado, color = "test"))  + geom_roc(n.cut = 0)
+basicplot + style_roc(xlab = "False Positive Rate", ylab = "True Positive Rate") + theme_dark() + ggtitle("ROC Curve") + annotate("text", x = .75, y = .25, label = paste("AUC =", round(calc_auc(basicplot)$AUC, 2)))
+
+
 plotResults(dtResults)
 plotResults2(dtResults)
 skrrrahh(sound = 26)

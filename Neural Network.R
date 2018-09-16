@@ -9,11 +9,12 @@ require(neuralnet)
 require(nnet)
 library(randomForest)
 require(ggplot2)
+install.packages("reshape") 
 library(reshape)
 library(dplyr)
 set.seed(10)
 
-#install.packages("devtools")
+install.packages("devtools")
 library(devtools)
 source_url('https://gist.githubusercontent.com/fawda123/7471137/raw/466c1474d0a505ff044412703516c34f1a4684a5/nnet_plot_update.r')
 
@@ -46,6 +47,7 @@ plt1
 # Scale mydata
 scl <- function(x){ (x - min(x))/(max(x) - min(x)) }
 mydata[, 1:20] <- data.frame(lapply(mydata[, 1:20], scl))
+mydata <- mydata[which(mydata$NewEvent != "Hail"),]
 head(mydata)
 
 # Fit neural net
@@ -62,6 +64,17 @@ plotResults(nnResults)
 plotResults2(nnResults)
 head(testdata)
 
+a <- data.frame(recode_factor(max.col(nnPred), '0' = "No Event", '0' = "Fog", '0' = "Rain", '0' = "Snow", '0' = "Thunderstom", '1' = "Tornado"))
+a$ATornado <- ifelse(testdata$NewEvent == "Tornado", 1, 0)
+a$PTornado <- ifelse(a == "Tornado", 1, 0)
+a[is.na(a$PTornado),] <- 0
+
+
+#plot ROC curve
+basicplot <- ggplot(a, aes(d = ATornado, m = PTornado, color = "test"))  + geom_roc(n.cut = 0)
+library(ggthemes)  
+basicplot + style_roc(xlab = "False Positive Rate", ylab = "True Positive Rate") + theme_dark() + ggtitle("ROC Curve") + annotate("text", x = .75, y = .25, label = paste("AUC =", round(calc_auc(basicplot)$AUC, 2)))
+  
 
 #plot the model
 plot.nnet(nn)
